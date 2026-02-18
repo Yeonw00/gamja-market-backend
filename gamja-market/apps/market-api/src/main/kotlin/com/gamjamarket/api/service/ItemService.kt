@@ -152,4 +152,16 @@ class ItemService(
 
         return ItemDetailResponse.from(item)
     }
+
+    @Transactional
+    fun deleteItem(itemId: Long, sellerId: UUID) {
+        val item = itemRepository.findById(itemId)
+            .orElseThrow { IllegalArgumentException("상품을 찾을 수 없습니다.") }
+
+        if (item.seller.id != sellerId) {
+            throw IllegalArgumentException("삭제 권한이 없습니다.")
+        }
+
+        itemRepository.delete(item)
+    }
 }

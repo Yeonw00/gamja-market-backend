@@ -12,6 +12,7 @@ import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -61,5 +62,14 @@ class ItemController(
         val updateItem = itemService.updateItem(itemId, sellerId, request)
 
         return ResponseEntity.ok(updateItem)
+    }
+
+    @DeleteMapping("/{itemId}")
+    fun deleteItem(
+        @PathVariable itemId: Long,
+        @RequestHeader("X-Seller-Id")sellerId: UUID
+    ): ResponseEntity<Unit> {
+        itemService.deleteItem(itemId, sellerId)
+        return ResponseEntity.noContent().build()
     }
 }

@@ -2,10 +2,14 @@ package com.gamjamarket.domain
 
 import com.gamjamarket.domain.common.BaseTimeEntity
 import jakarta.persistence.*
+import org.hibernate.annotations.SQLDelete
+import org.hibernate.annotations.SQLRestriction
 import java.util.UUID
 
 @Entity
 @Table(name = "items")
+@SQLDelete(sql = "UPDATE items SET is_deleted = true WHERE id = ?") // 삭제 호출 시 UPDATE 실행
+@SQLRestriction("is_deleted = false")
 class Item (
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,7 +44,10 @@ class Item (
         cascade = [CascadeType.ALL],
         orphanRemoval = true
     )
-    var images: MutableList<ItemImage> = mutableListOf()
+    var images: MutableList<ItemImage> = mutableListOf(),
+
+    @Column(name = "is_deleted")
+    var isDeleted: Boolean = false,
 ) : BaseTimeEntity() {
     fun updateImages(newImageUrls: List<String>) {
         this.images.clear()
