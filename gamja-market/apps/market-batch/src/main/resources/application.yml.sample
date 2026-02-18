@@ -1,0 +1,24 @@
+spring:
+  # 배치는 웹 서버가 아니므로 웹 환경을 끄는 설정
+  main:
+    web-application-type: none
+
+  datasource:
+    url: "jdbc:postgresql://localhost:5432/YOUR_DATABASE"
+    username: "YOUR_USERNAME"
+    password: "YOUR_PASSWORD"
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: YOUR_DATABASE(OPTION)
