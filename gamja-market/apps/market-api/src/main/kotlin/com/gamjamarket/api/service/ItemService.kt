@@ -10,6 +10,7 @@ import com.gamjamarket.domain.AuctionStatus
 import com.gamjamarket.domain.Item
 import com.gamjamarket.domain.ItemImage
 import com.gamjamarket.repository.AuctionRepository
+import com.gamjamarket.repository.BidRepository
 import com.gamjamarket.repository.CategoryRepository
 import com.gamjamarket.repository.ItemImageRepository
 import com.gamjamarket.repository.ItemRepository
@@ -30,6 +31,7 @@ class ItemService(
     private val userRepository: UserRepository,
     private val itemImageRepository: ItemImageRepository,
     private val categoryRepository: CategoryRepository,
+    private val bidRepository: BidRepository,
     private val redisTemplate: StringRedisTemplate
 ) {
     fun createItem(sellerId: UUID, request: ItemCreateRequest) : ItemCreateResponse {
@@ -160,6 +162,12 @@ class ItemService(
 
         if (item.seller.id != sellerId) {
             throw IllegalArgumentException("삭제 권한이 없습니다.")
+        }
+
+        item.auction?.let { auction ->
+            if (bidRepository.existsByAuctionId(auction.id!!)) {
+                throw IllegalStateException("이미 입찰이 진행된 상품은 삭제할 수 없습니다.")
+            }
         }
 
         itemRepository.delete(item)

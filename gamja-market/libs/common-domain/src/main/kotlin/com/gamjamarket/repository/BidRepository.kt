@@ -15,4 +15,7 @@ interface BidRepository : JpaRepository<Bid, Long> {
 
     // 특정 사용자의 입찰 내역 조회
     fun findAllByBidderId(bidderId: UUID): List<Bid>
+
+    // 해당 경매 ID를 가진 입찰이 존재하는지 여부만 확인 (count보다 빠름)
+    fun existsByAuctionId(auctionId: Long): Boolean
 }
