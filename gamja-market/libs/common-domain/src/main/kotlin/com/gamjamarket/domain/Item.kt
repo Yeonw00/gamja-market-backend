@@ -62,6 +62,20 @@ class Item (
             )
         }
     }
+
+    fun update(
+        newTitle: String?,
+        newContent: String?,
+        newCondition: ItemCondition?,
+        newCategory: Category?,
+        newImageUrls: List<String>?
+    ) {
+        newTitle?.let { this.title = it }
+        newContent?.let { this.content = it }
+        newCondition?.let { this.condition = it }
+        newCategory?.let { this.category = it }
+        newImageUrls?.let { this.updateImages(it) }
+    }
 }
 
 enum class ItemCondition {

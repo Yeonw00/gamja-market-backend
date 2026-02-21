@@ -136,21 +136,36 @@ class ItemService(
         val item = itemRepository.findById(itemId)
             .orElseThrow { IllegalArgumentException("상품을 찾을 수 없습니다.") }
 
+        // 1. 권한 검증
         if (item.seller.id != sellerId) {
-            throw IllegalAccessException("수정 권한이 없습니다.")
+            throw IllegalArgumentException("수정 권한이 없습니다.")
         }
 
-        request.title?.let { item.title = it }
-        request.content?.let { item.content = it }
-        request.condition?.let { item.condition = it }
-        request.categoryId?.let { newCategoryId ->
-            val newCategory = categoryRepository.findById(newCategoryId)
+        // 2. 경매 및 입찰 상태 검증
+        item.auction?.let { auction ->
+            if (bidRepository.existsByAuctionId(auction.id!!)) {
+                throw IllegalStateException("이미 입찰이 진행된 상품은 수정할 수 없습니다.")
+            }
+
+            // 경매 종료 시간이 지났다면 수정 금지
+            if (auction.endAt.isBefore(LocalDateTime.now())) {
+                throw IllegalStateException("이미 종료된 경매는 수정할 수 없습니다.")
+            }
+        }
+
+        // 3. 카테고리 업데이트가 필요한 경우에만 조회
+        val newCategory = request.categoryId?.let { categoryId ->
+            categoryRepository.findById(categoryId)
                 .orElseThrow { IllegalArgumentException("존재하지 않는 카테고리입니다.") }
-            item.category = newCategory
         }
-        request.imageUrls?.let { urls ->
-            item.updateImages(urls)
-        }
+
+        item.update(
+            newTitle = request.title,
+            newContent = request.content,
+            newCondition = request.condition,
+            newCategory = newCategory,
+            newImageUrls = request.imageUrls
+        )
 
         return ItemDetailResponse.from(item)
     }
