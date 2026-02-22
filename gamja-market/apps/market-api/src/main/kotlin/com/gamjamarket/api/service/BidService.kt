@@ -41,7 +41,7 @@ class BidService(
         val result = redisTemplate.execute(
             bidScript,
             listOf(highesBidKey), // KEYS[1]
-            bidAmount.toString() // ARGV[1]
+            bidPrice.toString() // ARGV[1]
         )
 
         // 2. 스크립트 결과 확인
