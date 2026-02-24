@@ -107,7 +107,7 @@ class ItemService(
                 thumbnailImageUrl = null, // TODO: 이미지 테이블에서 첫 번째 이미지 가져오기
                 auctionStatus = auction.getEffectiveStatus(),
                 viewCount = item.viewCount,
-                createdAt = item.createdAt!!
+                createdAt = item.createdAt
             )
         }
     }
@@ -119,8 +119,6 @@ class ItemService(
 
         val item = itemRepository.findById(itemId)
             .orElseThrow { IllegalArgumentException("해당 상품을 찾을 수 없습니다. (ID: $itemId)") }
-
-        val auction = item.auction ?: throw IllegalStateException("경매 정보가 없는 상품입니다.")
 
         val currentRedisView = redisTemplate.opsForValue().get(viewCountKey)?.toInt() ?: 0
 
