@@ -56,6 +56,17 @@ class ItemService(
             throw IllegalArgumentException("경매 시작 시간은 등록일로부터 최대 일주일 이내로만 설정할 수 있습니다.")
         }
 
+        val minEndTime = actualStartAt.plusHours(1)
+        val maxEndTime = actualStartAt.plusDays(5)
+
+        if (request.endAt.isBefore(minEndTime)) {
+            throw IllegalArgumentException("경매는 시작 시간으로부터 최소 1시간 이상 진행되어야 합니다.")
+        }
+
+        if (request.endAt.isAfter(maxEndTime)) {
+            throw IllegalArgumentException("경매는 시작 시간으로부터 최대 5일까지만 진행할 수 있습니다.")
+        }
+
         // AuctionStatus 설정
         val initialStatus = if (actualStartAt.isAfter(now)) {
             AuctionStatus.BEFORE_START
