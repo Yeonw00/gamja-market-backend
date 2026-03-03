@@ -28,4 +28,7 @@ interface BidRepository : JpaRepository<Bid, Long> {
     // 알림 발송용
     @Query("SELECT DISTINCT b.bidder.id FROM Bid b WHERE b.auction.id = :auctionId")
     fun findDistinctBidderIdsByAuctionId(@Param("auctionId")auctionId: Long): List<UUID>
+
+    // 특정 경매의 입찰 내역 중 입찰가가 가장 높은 1건을 조회
+    fun findTopByAuctionIdOrderByBidPriceDesc(auctionId: Long): Bid?
 }

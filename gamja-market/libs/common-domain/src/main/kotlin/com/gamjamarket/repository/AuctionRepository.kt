@@ -2,7 +2,9 @@ package com.gamjamarket.repository
 
 import com.gamjamarket.domain.Auction
 import com.gamjamarket.domain.enums.AuctionStatus
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -29,4 +31,9 @@ interface AuctionRepository : JpaRepository<Auction, Long> {
 
     // 특정 시간 이전에 종료되어야 하는데 아직 진행 중인 경매 찾기 (배치 작업용)
     fun findAllByAuctionStatusAndEndAtBefore(status: AuctionStatus, dateTime: LocalDateTime): List<Auction>
+
+    // 비관적 락을 사용하여 경매 엔터티 조회 (동시성 제어용)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Auction a WHERE a.id = :id")
+    fun findByIdWIthPessimisticLock(@Param("id") id: Long): Auction?
 }
