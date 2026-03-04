@@ -6,6 +6,7 @@ import com.gamjamarket.api.dto.response.ItemDetailResponse
 import com.gamjamarket.api.dto.response.ItemSummaryResponse
 import com.gamjamarket.api.service.ItemService
 import com.gamjamarket.api.dto.request.ItemUpdateRequest
+import com.gamjamarket.domain.enums.CancelReason
 import com.gamjamarket.utils.response.ApiResponse
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
@@ -74,9 +76,10 @@ class ItemController(
     @DeleteMapping("/{itemId}")
     fun deleteItem(
         @PathVariable itemId: Long,
-        @RequestHeader("X-Seller-Id")sellerId: UUID
+        @RequestHeader("X-Seller-Id")sellerId: UUID,
+        @RequestParam reason: CancelReason
     ): ResponseEntity<ApiResponse<Nothing>> {
-        itemService.deleteItem(itemId, sellerId)
+        itemService.deleteItem(itemId, sellerId, reason)
         return ResponseEntity.ok(
             ApiResponse.successWithNoData("상품이 성공적으로 삭제되었습니다.")
         )

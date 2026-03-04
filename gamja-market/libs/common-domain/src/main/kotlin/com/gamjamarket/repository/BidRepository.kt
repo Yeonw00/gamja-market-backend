@@ -21,7 +21,7 @@ interface BidRepository : JpaRepository<Bid, Long> {
     fun existsByAuctionId(auctionId: Long): Boolean
 
     // 스케줄러 용
-    @Query("SELECT DISTINCT b.auction.id FROM Bid b WHERE b.auction.id IN : auctionIds")
+    @Query("SELECT DISTINCT b.auction.id FROM Bid b WHERE b.auction.id IN :auctionIds")
     fun findAuctionIdsWithBidsIn(@Param("auctionIds")auctionIds: List<Long>): List<Long>
 
 
