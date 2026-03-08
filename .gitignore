@@ -45,5 +45,6 @@ bin/
 .claude/
 
 **/src/main/resources/application.yml
+CLAUDE.md
 
 CLAUDE.md
