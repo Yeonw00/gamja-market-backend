@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/bids")
+@RequestMapping("/api/v1/auctions")
 class BidController(
     private val bidService: BidService
 ) {
@@ -40,7 +40,7 @@ class BidController(
         )
     }
 
-    @GetMapping("{auctionId}/bids")
+    @GetMapping("/{auctionId}/bids")
     fun getBidHistory(
         @PathVariable auctionId: Long,
         @PageableDefault(size = 10, sort = ["bidPrice"], direction = Sort.Direction.DESC) pageable: Pageable
