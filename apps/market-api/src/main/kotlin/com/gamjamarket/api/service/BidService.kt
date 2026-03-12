@@ -11,6 +11,7 @@ import com.gamjamarket.utils.response.ResultCode
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.redis.core.RedisTemplate
+import org.springframework.data.redis.core.script.DefaultRedisScript
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
@@ -78,18 +79,24 @@ class BidService(
 
         // 2. DB 비관적 락으로 경매 조회
         val auction = auctionRepository.findByIdWithItemAndSellerForUpdate(auctionId)
-            ?: throw BusinessException(ResultCode.AUCTION_NOT_FOUND)
+        if (auction == null) {
+            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
+            throw BusinessException(ResultCode.AUCTION_NOT_FOUND)
+        }
 
         if (auction.item.seller.id == bidderId) {
+            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
             throw BusinessException(ResultCode.BID_OWN_ITEM)
         }
 
         val now = LocalDateTime.now()
         if (auction.endAt.isBefore(now)) {
+            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
             throw BusinessException(ResultCode.AUCTION_ALREADY_ENDED)
         }
 
         if (bidPrice < auction.startPrice) {
+            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
             throw BusinessException(ResultCode.BID_LOWER_THAN_START_PRICE, "입찰 금액은 시작가(${auction.startPrice}원) 이상이어야 합니다.")
         }
 
