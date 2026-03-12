@@ -79,24 +79,18 @@ class BidService(
 
         // 2. DB 비관적 락으로 경매 조회
         val auction = auctionRepository.findByIdWithItemAndSellerForUpdate(auctionId)
-        if (auction == null) {
-            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
-            throw BusinessException(ResultCode.AUCTION_NOT_FOUND)
-        }
+            ?: throw BusinessException(ResultCode.AUCTION_NOT_FOUND)
 
         if (auction.item.seller.id == bidderId) {
-            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
             throw BusinessException(ResultCode.BID_OWN_ITEM)
         }
 
         val now = LocalDateTime.now()
         if (auction.endAt.isBefore(now)) {
-            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
             throw BusinessException(ResultCode.AUCTION_ALREADY_ENDED)
         }
 
         if (bidPrice < auction.startPrice) {
-            rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
             throw BusinessException(ResultCode.BID_LOWER_THAN_START_PRICE, "입찰 금액은 시작가(${auction.startPrice}원) 이상이어야 합니다.")
         }
 
