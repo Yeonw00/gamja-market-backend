@@ -3,6 +3,8 @@ package com.gamjamarket.api.dto.response
 import com.gamjamarket.domain.Item
 import com.gamjamarket.domain.enums.AuctionStatus
 import com.gamjamarket.domain.enums.ItemCondition
+import com.gamjamarket.utils.exception.BusinessException
+import com.gamjamarket.utils.response.ResultCode
 import java.time.LocalDateTime
 
 data class ItemDetailResponse(
@@ -23,7 +25,7 @@ data class ItemDetailResponse(
 ) {
     companion object {
         fun from(item: Item): ItemDetailResponse {
-            val auction = item.auction ?: throw IllegalStateException("경매 정보가 없는 상품입니다.")
+            val auction = item.auction ?: throw BusinessException(ResultCode.AUCTION_NO_INFO)
 
             return ItemDetailResponse(
                 id = item.id!!,

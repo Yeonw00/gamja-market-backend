@@ -20,10 +20,10 @@ class User(
     var nicknameNormalized: String? = null,
 
     @Column(name = "nickname_chosung")
-    var nicknameChosung: String ?= null,
+    var nicknameChosung: String? = null,
 
     @Column(name = "nickname_jamo")
-    var nicknameJamo: String ?= null,
+    var nicknameJamo: String? = null,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

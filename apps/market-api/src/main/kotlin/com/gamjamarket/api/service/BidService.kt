@@ -6,12 +6,16 @@ import com.gamjamarket.domain.Bid
 import com.gamjamarket.repository.AuctionRepository
 import com.gamjamarket.repository.BidRepository
 import com.gamjamarket.repository.UserRepository
+import com.gamjamarket.utils.exception.BusinessException
+import com.gamjamarket.utils.response.ResultCode
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.core.script.DefaultRedisScript
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -22,56 +26,103 @@ class BidService(
     private val bidRepository: BidRepository,
     private val userRepository: UserRepository
 ) {
+    // 입찰가가 현재 최고가보다 높으면 Redis를 갱신하고 이전 값을 반환, 아니면 -1 반환
+    private val bidFilterScript = DefaultRedisScript<Long>().apply {
+        setScriptText("""
+            local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+            local bid = tonumber(ARGV[1])
+            if bid > current then
+                redis.call('SET', KEYS[1], ARGV[1])
+                return current
+            end
+            return -1
+        """.trimIndent())
+        resultType = Long::class.java
+    }
+
+    // Redis 값이 지정된 값과 같을 때만 이전 값으로 복원 (CAS 방식 롤백)
+    private val bidRollbackScript = DefaultRedisScript<Long>().apply {
+        setScriptText("""
+            if redis.call('GET', KEYS[1]) == ARGV[1] then
+                if tonumber(ARGV[2]) > 0 then
+                    redis.call('SET', KEYS[1], ARGV[2])
+                else
+                    redis.call('DEL', KEYS[1])
+                end
+            end
+            return 0
+        """.trimIndent())
+        resultType = Long::class.java
+    }
+
     @Transactional
     fun placeBid(auctionId: Long, bidderId: UUID, bidPrice: Long): BidResponse {
         val highestBidKey = "auction:$auctionId:highest_bid"
 
-        val cachedHighestPriceStr = redisTemplate.opsForValue().get(highestBidKey)
-        if (cachedHighestPriceStr != null) {
-            val cachedHighestPrice = cachedHighestPriceStr.toLong()
-            if (bidPrice <= cachedHighestPrice) {
-                throw IllegalArgumentException("현재 최고 입찰가(${cachedHighestPrice}원) 보다 높은 금액을 제시해야 합니다.")
-            }
+        // 1. Redis Lua 스크립트로 원자적 비교-설정 (빠른 1차 필터)
+        val previousPrice = redisTemplate.execute(
+            bidFilterScript, listOf(highestBidKey), bidPrice.toString()
+        ) ?: -1L
+
+        if (previousPrice == -1L) {
+            throw BusinessException(ResultCode.BID_LOWER_THAN_HIGHEST, "현재 최고 입찰가보다 높은 금액을 제시해야 합니다.")
         }
 
-        val auction = auctionRepository.findByIdWIthPessimisticLock(auctionId)
-            ?: throw IllegalArgumentException("경매를 찾을 수 없습니다.")
+        // 트랜잭션 커밋 실패 시 Redis 자동 롤백 등록
+        TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+            override fun afterCompletion(status: Int) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    rollbackRedisPrice(highestBidKey, bidPrice, previousPrice)
+                }
+            }
+        })
+
+        // 2. DB 비관적 락으로 경매 조회
+        val auction = auctionRepository.findByIdWithItemAndSellerForUpdate(auctionId)
+            ?: throw BusinessException(ResultCode.AUCTION_NOT_FOUND)
 
         if (auction.item.seller.id == bidderId) {
-            throw IllegalArgumentException("자신의 상품에는 입찰할 수 없습니다.")
+            throw BusinessException(ResultCode.BID_OWN_ITEM)
         }
 
         val now = LocalDateTime.now()
         if (auction.endAt.isBefore(now)) {
-            throw IllegalStateException("이미 종료된 경매입니다.")
+            throw BusinessException(ResultCode.AUCTION_ALREADY_ENDED)
         }
 
         if (bidPrice < auction.startPrice) {
-            throw IllegalArgumentException("입찰 금액은 시작가(${auction.startPrice}원) 이상이어야 합니다.")
+            throw BusinessException(ResultCode.BID_LOWER_THAN_START_PRICE, "입찰 금액은 시작가(${auction.startPrice}원) 이상이어야 합니다.")
         }
 
-        val highestBid = bidRepository.findTopByAuctionIdOrderByBidPriceDesc(auctionId)
-        val actualHighestPrice = highestBid?.bidPrice ?: auction.startPrice
+        // 3. DB에서 실제 최고가 재확인 (최종 정합성 보장)
+        val actualHighestPrice = bidRepository.findTopByAuctionIdOrderByBidPriceDesc(auctionId)?.bidPrice
+            ?: auction.startPrice
 
         if (bidPrice <= actualHighestPrice) {
-            throw IllegalArgumentException("현재 최고 입찰가(${actualHighestPrice}원)보다 높은 금액을 제시해야 합니다.")
+            // Redis를 DB의 실제 최고가로 보정
+            redisTemplate.opsForValue().set(highestBidKey, actualHighestPrice.toString())
+            throw BusinessException(ResultCode.BID_LOWER_THAN_HIGHEST, "현재 최고 입찰가(${actualHighestPrice}원)보다 높은 금액을 제시해야 합니다.")
         }
 
+        // 4. 입찰 저장 (Redis는 Lua 스크립트에서 이미 갱신됨)
         val bidderProxy = userRepository.getReferenceById(bidderId)
-
-        val  newBid = Bid(
-            auction = auction,
-            bidder = bidderProxy,
-            bidPrice = bidPrice
+        val newBid = bidRepository.save(
+            Bid(auction = auction, bidder = bidderProxy, bidPrice = bidPrice)
         )
-
-        bidRepository.save(newBid)
-
-        redisTemplate.opsForValue().set(highestBidKey, bidPrice.toString())
 
         return BidResponse(
             currentHighestPrice = newBid.bidPrice,
-            bidTime = newBid.createdAt ?: LocalDateTime.now() // BaseTimeEntity 활용
+            bidTime = newBid.createdAt ?: LocalDateTime.now()
+        )
+    }
+
+    /**
+     * Redis 값이 bidPrice와 같을 때만 previousPrice로 복원 (CAS 방식)
+     * 다른 유효한 입찰이 이미 Redis를 갱신한 경우에는 복원하지 않음
+     */
+    private fun rollbackRedisPrice(key: String, bidPrice: Long, previousPrice: Long) {
+        redisTemplate.execute(
+            bidRollbackScript, listOf(key), bidPrice.toString(), previousPrice.toString()
         )
     }
 
@@ -79,10 +130,10 @@ class BidService(
     fun getBidHistory(auctionId: Long, pageable: Pageable): Page<BidHistoryResponse> {
 
         if (!auctionRepository.existsById(auctionId)) {
-            throw IllegalArgumentException("존재하지 않는 경매입니다.")
+            throw BusinessException(ResultCode.AUCTION_NOT_FOUND)
         }
 
-        val bidPage = bidRepository.findByAuctionId(auctionId, pageable)
+        val bidPage = bidRepository.findByAuctionIdWithBidder(auctionId, pageable)
 
         return bidPage.map { bid ->
             BidHistoryResponse(

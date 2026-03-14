@@ -36,4 +36,9 @@ interface AuctionRepository : JpaRepository<Auction, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM Auction a WHERE a.id = :id")
     fun findByIdWIthPessimisticLock(@Param("id") id: Long): Auction?
+
+    // 비관적 락 + Item, Seller를 한 번에 로딩 (N+1 방지)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Auction a JOIN FETCH a.item i JOIN FETCH i.seller WHERE a.id = :id")
+    fun findByIdWithItemAndSellerForUpdate(@Param("id") id: Long): Auction?
 }

@@ -1,11 +1,12 @@
 package com.gamjamarket.batch.scheduler
 
 import com.gamjamarket.repository.ItemRepository
-import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
+import org.springframework.data.redis.core.ScanOptions
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 
 @Component
 class ViewCountSyncScheduler(
@@ -17,23 +18,27 @@ class ViewCountSyncScheduler(
     @Scheduled(cron = "0 0 * * * *")
     @Transactional
     fun syncViewCountToDB() {
-        val keys = redisTemplate.keys("item:view_count:*") ?: return
-        if (keys.isEmpty()) return
+        val scanOptions = ScanOptions.scanOptions()
+            .match("item:view_count:*")
+            .count(100)
+            .build()
 
-        logger.info("조회수 동기화 시작: ${keys.size} 개의 상품")
+        var syncCount = 0
 
-        keys.forEach { key ->
-            val itemId = key.split(":").last().toLong()
-            val count = redisTemplate.opsForValue().get(key)?.toLong() ?: 0L
+        redisTemplate.scan(scanOptions).use { cursor ->
+            cursor.forEach { key ->
+                val itemId = key.substringAfterLast(":").toLongOrNull() ?: return@forEach
+                val count = redisTemplate.opsForValue().getAndDelete(key)?.toLong() ?: return@forEach
 
-            if (count > 0) {
-                val updatedRows = itemRepository.updateViewCount(itemId, count.toInt())
-
-                if(updatedRows > 0) {
-                    redisTemplate.delete(key)
+                if (count > 0) {
+                    itemRepository.updateViewCount(itemId, count.toInt())
+                    syncCount++
                 }
             }
         }
-        logger.info("조회수 동기화 완료")
+
+        if (syncCount > 0) {
+            logger.info("조회수 동기화 완료: {}개 상품", syncCount)
+        }
     }
 }

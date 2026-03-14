@@ -14,6 +14,7 @@ import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -34,7 +35,7 @@ class ItemController(
     @PostMapping
     fun createItem(
         @RequestHeader("X-Seller-Id")sellerId: UUID,
-        @RequestBody request: ItemCreateRequest
+        @Valid @RequestBody request: ItemCreateRequest
     ): ResponseEntity<ApiResponse<ItemCreateResponse>> {
         val response = itemService.createItem(sellerId, request)
 
@@ -52,9 +53,9 @@ class ItemController(
         return ResponseEntity.ok(ApiResponse.success(response))
     }
 
-    @GetMapping("/{id}")
-    fun getItem(@PathVariable id: Long): ResponseEntity<ApiResponse<ItemDetailResponse>> {
-        val response = itemService.getItemDetail(id)
+    @GetMapping("/{itemId}")
+    fun getItem(@PathVariable itemId: Long): ResponseEntity<ApiResponse<ItemDetailResponse>> {
+        val response = itemService.getItemDetail(itemId)
         return ResponseEntity.ok(
             ApiResponse.success(response)
         )
@@ -64,7 +65,7 @@ class ItemController(
     fun updateItem(
         @PathVariable itemId: Long,
         @RequestHeader("X-Seller-Id")sellerId: UUID,
-        @RequestBody request: ItemUpdateRequest
+        @Valid @RequestBody request: ItemUpdateRequest
     ): ResponseEntity<ApiResponse<ItemDetailResponse>> {
         val response = itemService.updateItem(itemId, sellerId, request)
 

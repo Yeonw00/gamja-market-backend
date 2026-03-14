@@ -14,6 +14,13 @@ interface BidRepository : JpaRepository<Bid, Long> {
     // 특정 경매의 입찰 기록을 조회
     fun findByAuctionId(auctionId: Long, pageable: Pageable): Page<Bid>
 
+    // 입찰 내역 + 입찰자 정보를 한 번에 로딩 (N+1 방지)
+    @Query(
+        "SELECT b FROM Bid b JOIN FETCH b.bidder WHERE b.auction.id = :auctionId",
+        countQuery = "SELECT count(b) FROM Bid b WHERE b.auction.id = :auctionId"
+    )
+    fun findByAuctionIdWithBidder(@Param("auctionId") auctionId: Long, pageable: Pageable): Page<Bid>
+
     // 특정 사용자의 입찰 내역 조회
     fun findAllByBidderId(bidderId: UUID): List<Bid>
 

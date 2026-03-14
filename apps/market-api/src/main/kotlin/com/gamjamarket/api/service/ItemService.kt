@@ -16,7 +16,9 @@ import com.gamjamarket.repository.CategoryRepository
 import com.gamjamarket.repository.ItemImageRepository
 import com.gamjamarket.repository.ItemRepository
 import com.gamjamarket.repository.UserRepository
-import jakarta.transaction.Transactional
+import com.gamjamarket.utils.exception.BusinessException
+import com.gamjamarket.utils.response.ResultCode
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -25,7 +27,7 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 @Service
-@Transactional
+@Transactional(readOnly = true)
 class ItemService(
     private val itemRepository: ItemRepository,
     private val auctionRepository: AuctionRepository,
@@ -35,36 +37,37 @@ class ItemService(
     private val bidRepository: BidRepository,
     private val redisTemplate: StringRedisTemplate
 ) {
+    @Transactional
     fun createItem(sellerId: UUID, request: ItemCreateRequest) : ItemCreateResponse {
         // 1. 판매자, 카테고리 조회
         val seller = userRepository.findById(sellerId)
-            .orElseThrow { IllegalArgumentException("사용자를 찾을 수 없습니다.") }
+            .orElseThrow { BusinessException(ResultCode.USER_NOT_FOUND) }
 
         val category = categoryRepository.findById(request.categoryId)
-            .orElseThrow { IllegalArgumentException("존재하지 않는 카테고리입니다.") }
+            .orElseThrow { BusinessException(ResultCode.CATEGORY_NOT_FOUND) }
 
         val now = LocalDateTime.now()
         val actualStartAt = request.startAt ?: now
 
         if (actualStartAt.isBefore(now)) {
-            throw IllegalArgumentException("경매 시작 시간은 현재 시간 이후여야 합니다.")
+            throw BusinessException(ResultCode.AUCTION_INVALID_START_TIME)
         }
 
         // 2. 경매 시작 시간이 일주일 이내인지 검증
         val maxStartTime = now.plusDays(7)
         if (actualStartAt.isAfter(maxStartTime)) {
-            throw IllegalArgumentException("경매 시작 시간은 등록일로부터 최대 일주일 이내로만 설정할 수 있습니다.")
+            throw BusinessException(ResultCode.AUCTION_START_TIME_TOO_FAR)
         }
 
         val minEndTime = actualStartAt.plusHours(1)
         val maxEndTime = actualStartAt.plusDays(5)
 
         if (request.endAt.isBefore(minEndTime)) {
-            throw IllegalArgumentException("경매는 시작 시간으로부터 최소 1시간 이상 진행되어야 합니다.")
+            throw BusinessException(ResultCode.AUCTION_DURATION_TOO_SHORT)
         }
 
         if (request.endAt.isAfter(maxEndTime)) {
-            throw IllegalArgumentException("경매는 시작 시간으로부터 최대 5일까지만 진행할 수 있습니다.")
+            throw BusinessException(ResultCode.AUCTION_DURATION_TOO_LONG)
         }
 
         // AuctionStatus 설정
@@ -98,18 +101,17 @@ class ItemService(
         )
 
         // 5. 이미지 정보 저장
-        request.imageUrls.forEachIndexed { index, url ->
-            itemImageRepository.save(
-                ItemImage(
-                    item = item,
-                    imageUrl = url,
-                    sortOrder = index,
-                    isThumbnail = index == 0
-                )
+        val images = request.imageUrls.mapIndexed { index, url ->
+            ItemImage(
+                item = item,
+                imageUrl = url,
+                sortOrder = index,
+                isThumbnail = index == 0
             )
         }
+        itemImageRepository.saveAll(images)
         return ItemCreateResponse(
-            id = item.id ?: throw IllegalStateException("상품 ID 생성 실패"),
+            id = item.id ?: throw BusinessException(ResultCode.INTERNAL_ERROR, "상품 ID 생성 실패"),
             title = item.title,
             sellerId = seller.id,
             auctionStatus = auction.auctionStatus,
@@ -118,13 +120,12 @@ class ItemService(
         )
     }
 
-    @Transactional
     fun getItems(pageable: Pageable): Page<ItemSummaryResponse> {
-        return itemRepository.findAll(pageable).map { item ->
-            val auction = item.auction ?: throw IllegalStateException("경매 정보가 없는 상품입니다.")
+        return itemRepository.findAllWithAuction(pageable).map { item ->
+            val auction = item.auction ?: throw BusinessException(ResultCode.AUCTION_NO_INFO)
 
             ItemSummaryResponse(
-                id = item.id ?: throw IllegalStateException("상품 ID 생성 실패"),
+                id = item.id ?: throw BusinessException(ResultCode.INTERNAL_ERROR, "상품 ID 생성 실패"),
                 title = item.title,
                 startPrice = auction.startPrice,
                 thumbnailImageUrl = null, // TODO: 이미지 테이블에서 첫 번째 이미지 가져오기
@@ -135,49 +136,50 @@ class ItemService(
         }
     }
 
-    @Transactional
     fun getItemDetail(itemId: Long): ItemDetailResponse {
-        val viewCountKey = "item:view_count:$itemId"
-        redisTemplate.opsForValue().increment(viewCountKey)
+        val redisViewCount = incrementViewCount(itemId)
 
-        val item = itemRepository.findById(itemId)
-            .orElseThrow { IllegalArgumentException("해당 상품을 찾을 수 없습니다. (ID: $itemId)") }
-
-        val currentRedisView = redisTemplate.opsForValue().get(viewCountKey)?.toInt() ?: 0
+        val item = itemRepository.findByIdWithDetails(itemId)
+            ?: throw BusinessException(ResultCode.ITEM_NOT_FOUND, "해당 상품을 찾을 수 없습니다. (ID: $itemId)")
 
         val response = ItemDetailResponse.from(item)
 
         return response.copy(
-            viewCount = item.viewCount + currentRedisView
+            viewCount = item.viewCount + redisViewCount
         )
+    }
+
+    private fun incrementViewCount(itemId: Long): Int {
+        val viewCountKey = "item:view_count:$itemId"
+        return redisTemplate.opsForValue().increment(viewCountKey)?.toInt() ?: 0
     }
 
     @Transactional
     fun updateItem(itemId: Long, sellerId: UUID, request: ItemUpdateRequest): ItemDetailResponse {
         val item = itemRepository.findById(itemId)
-            .orElseThrow { IllegalArgumentException("상품을 찾을 수 없습니다.") }
+            .orElseThrow { BusinessException(ResultCode.ITEM_NOT_FOUND) }
 
         // 1. 권한 검증
         if (item.seller.id != sellerId) {
-            throw IllegalArgumentException("수정 권한이 없습니다.")
+            throw BusinessException(ResultCode.ITEM_NO_PERMISSION, "수정 권한이 없습니다.")
         }
 
         // 2. 경매 및 입찰 상태 검증
         item.auction?.let { auction ->
             if (bidRepository.existsByAuctionId(auction.id!!)) {
-                throw IllegalStateException("이미 입찰이 진행된 상품은 수정할 수 없습니다.")
+                throw BusinessException(ResultCode.ITEM_ALREADY_BIDDED)
             }
 
             // 경매 종료 시간이 지났다면 수정 금지
             if (auction.endAt.isBefore(LocalDateTime.now())) {
-                throw IllegalStateException("이미 종료된 경매는 수정할 수 없습니다.")
+                throw BusinessException(ResultCode.AUCTION_ALREADY_ENDED_CANNOT_MODIFY)
             }
         }
 
         // 3. 카테고리 업데이트가 필요한 경우에만 조회
         val newCategory = request.categoryId?.let { categoryId ->
             categoryRepository.findById(categoryId)
-                .orElseThrow { IllegalArgumentException("존재하지 않는 카테고리입니다.") }
+                .orElseThrow { BusinessException(ResultCode.CATEGORY_NOT_FOUND) }
         }
 
         item.update(
@@ -194,10 +196,10 @@ class ItemService(
     @Transactional
     fun deleteItem(itemId: Long, sellerId: UUID, reason: CancelReason) {
         val item = itemRepository.findById(itemId)
-            .orElseThrow { IllegalArgumentException("상품을 찾을 수 없습니다.") }
+            .orElseThrow { BusinessException(ResultCode.ITEM_NOT_FOUND) }
 
         if (item.seller.id != sellerId) {
-            throw IllegalArgumentException("삭제 권한이 없습니다.")
+            throw BusinessException(ResultCode.ITEM_NO_PERMISSION, "삭제 권한이 없습니다.")
         }
 
         item.auction?.let { auction ->
@@ -205,7 +207,7 @@ class ItemService(
 
             // 1. 경매 종료 1시간 전(또는 이미 종료된 후)에는 무조건 삭제 불가
             if (now.isAfter(auction.endAt.minusHours(1))) {
-                throw IllegalStateException("경매 마감 1시간 전부터는 상품을 삭제할 수 없습니다.")
+                throw BusinessException(ResultCode.AUCTION_CANNOT_DELETE_NEAR_END)
             }
 
             // 2. 입찰자가 있는지 확인

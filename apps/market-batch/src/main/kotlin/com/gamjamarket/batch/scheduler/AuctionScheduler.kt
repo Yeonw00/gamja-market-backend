@@ -53,9 +53,9 @@ class AuctionScheduler(
         }
 
         // 2. 조회된 경매들의 ID만 리스트로 추출
-        val auctionIds = targetAuctions.mapNotNull { it. id }
+        val auctionIds = targetAuctions.mapNotNull { it.id }
 
-        // 3. 쿼리 단 한번으로 입찰이 존재하는 경매 ID 목록ㅇ르 가져와 빠른 검색을 위해 Set으로 변환
+        // 3. 쿼리 단 한번으로 입찰이 존재하는 경매 ID 목록을 가져와 빠른 검색을 위해 Set으로 변환
         val auctionedIdsWithBids = bidRepository.findAuctionIdsWithBidsIn(auctionIds).toSet()
 
         // 4. 조회된 경매들을 순회하며 종료 비즈니스 로직 처리

@@ -14,12 +14,13 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/bids")
+@RequestMapping("/api/v1/auctions")
 class BidController(
     private val bidService: BidService
 ) {
@@ -27,11 +28,12 @@ class BidController(
     @PostMapping("/{auctionId}/bids")
     fun placeBid(
         @PathVariable auctionId: Long,
+        @RequestHeader("X-Bidder-Id") bidderId: UUID,
         @RequestBody request: BidRequest
     ): ResponseEntity<ApiResponse<BidResponse>> {
         val response = bidService.placeBid(
             auctionId = auctionId,
-            bidderId = request.bidderId,
+            bidderId = bidderId,
             bidPrice = request.bidPrice
         )
 
@@ -40,7 +42,7 @@ class BidController(
         )
     }
 
-    @GetMapping("{auctionId}/bids")
+    @GetMapping("/{auctionId}/bids")
     fun getBidHistory(
         @PathVariable auctionId: Long,
         @PageableDefault(size = 10, sort = ["bidPrice"], direction = Sort.Direction.DESC) pageable: Pageable
