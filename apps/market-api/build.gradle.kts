@@ -25,5 +25,8 @@ dependencies {
     // 3. Redis 연동을 위해 추가
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
+    // 4. Swagger UI (SpringDoc OpenAPI)
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
